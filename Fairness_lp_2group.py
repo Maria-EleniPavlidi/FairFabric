@@ -1,4 +1,4 @@
-# FAIRNESS SECTION
+# FAIRNESS FOR 2 GROUPS
 # ----------------
 # We enforce a fairness constraint on the set of epsilon staircases.
 # Let:
@@ -269,3 +269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
