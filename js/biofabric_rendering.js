@@ -1,4 +1,4 @@
-function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edgetitle, print_title = true, stroke_width = 3, rect_size = 5){
+function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edgetitle, print_title = true, stroke_width = 3, rect_size = 5, use_node_colors = false){
   
     let svgwidth = 500;
     let svgheight = 500;
@@ -29,8 +29,25 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
   
       node_h_dict[ordernodes[i]] = line_h;
       
+      // Determine node line color 
+      let nodeColor = "rgba(238, 238, 238, 0.5)"; // default light gray 
+      
+      if (use_node_colors) { // ONLY apply node colors when use_node_colors is true
+        let currentNode = graph.nodes.find(n => n.id === ordernodes[i]);
+        if (currentNode && currentNode.color) {
+          if (currentNode.color === 'blue') {
+            nodeColor = 'rgba(0, 0, 255, 0.5)'; 
+          } else if (currentNode.color === 'red') {
+            nodeColor = 'rgba(255, 0, 0, 0.5)'; 
+          }
+          else if (currentNode.color === 'green') {
+            nodeColor = 'rgba(26, 196, 32, 0.5)'; 
+          }
+        }
+      }
+      
       svg.append("line")
-        .attr("stroke", "#eee")
+        .attr("stroke", nodeColor)
         .attr("stroke-width", 3)
         .style("stroke-linecap", "round")
         .attr("x1", padding.left)
@@ -47,40 +64,42 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
         .style("text-anchor", "end")
         .text(ordernodes[i])
     }
-  
-    for (let i in orderedges){
-      let line_x = padding.left + (svgwidth - padding.left - padding.right)/numedges * i
-      
-      let edge = graph.links.find(e => e.id == orderedges[i])
-      let topnode_h = node_h_dict[edge.source]
-      let bottomnode_h = node_h_dict[edge.target]
-  
-      let highestnode = Math.max(topnode_h, bottomnode_h)
-      let lowestnode = Math.min(topnode_h, bottomnode_h)
 
-      let possible_stair = undefined
-      let index_of_possible_stair = undefined
+    for (let i in orderedges) {
+      let line_x = padding.left + (svgwidth - padding.left - padding.right) / numedges * i;
 
-      let how_many_stairs_share_this_edge = result.stairs.filter(s => s.includes(orderedges[i])).length
-      if (how_many_stairs_share_this_edge != 0) {
-        possible_stair = result.stairs.find(s => s.includes(orderedges[i]))
-        index_of_possible_stair = result.stairs.findIndex(s => s.includes(orderedges[i]))
+      let edge = (graph?.links || graph?.edges || []).find(e => e.id == orderedges[i]);
+      if (!edge) {
+        console.warn("Edge not found for id:", orderedges[i]);
+        continue;
       }
 
-      let staircase_color_1 = "#F9D466"
-      let staircase_color_2 = "#f7a222"
-      // let staircase_color_2 = "#3C7BAE"
-      // let staircase_color_2 = "#25BBF7"
+      let topnode_h = node_h_dict[edge.source];
+      let bottomnode_h = node_h_dict[edge.target];
 
-      if (how_many_stairs_share_this_edge){
+      let highestnode = Math.max(topnode_h, bottomnode_h);
+      let lowestnode = Math.min(topnode_h, bottomnode_h);
+
+      let possible_stair = undefined;
+      let index_of_possible_stair = undefined;
+
+      let how_many_stairs_share_this_edge = result.stairs.filter(s => s.includes(orderedges[i])).length;
+      if (how_many_stairs_share_this_edge != 0) {
+        possible_stair = result.stairs.find(s => s.includes(orderedges[i]));
+        index_of_possible_stair = result.stairs.findIndex(s => s.includes(orderedges[i]));
+      }
+
+      let staircase_color_1 = "#F9D466";
+      let staircase_color_2 = "#f7a222";
+
+      if (how_many_stairs_share_this_edge) {
         svg.append("line")
           .attr("stroke", () => {
-            if (!color_by_staircase) return "gray"
+            if (!color_by_staircase) return "gray";
             else {
               if (possible_stair != undefined) {
-                if (index_of_possible_stair%2 == 0) return staircase_color_2
-                else return staircase_color_1
-              } else return "gray"
+                return index_of_possible_stair % 2 == 0 ? staircase_color_2 : staircase_color_1;
+              } else return "gray";
             }
           })
           .attr("stroke-width", stroke_width)
@@ -88,9 +107,10 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
           .attr("x1", line_x)
           .attr("x2", line_x)
           .attr("y1", topnode_h)
-          .attr("y2", bottomnode_h)
+          .attr("y2", bottomnode_h);
       }
-  
+
+      
       svg.append("line")
         .attr("stroke", () => {
           if (!color_by_staircase) return "gray"
@@ -117,107 +137,6 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
           console.log(edge.id)
         })
 
-      // svg.append("rect")
-      //   .attr("x", line_x - rect_size/2)
-      //   .attr("y", highestnode - rect_size/2)
-      //   .attr("width", rect_size)
-      //   .attr("height", rect_size)
-      //   .attr("rx", 3)
-      //   .attr("ry", 3)
-      //   .attr("fill", () => {
-      //     if (!color_by_staircase) return "gray"
-      //     else {
-      //       if (possible_stair != undefined) {
-      //         if (how_many_stairs_share_this_edge == 2) return d3.interpolate("#F7C225", "#3C7BAE")(0.5)
-      //         if (index_of_possible_stair%2 == 0) return staircase_color_1
-      //         else return staircase_color_2
-      //       } else return "gray"
-      //     }
-      //   })
-
-      // svg.append("rect")
-      // .attr("x", line_x - rect_size/2)
-      //   .attr("y", lowestnode - rect_size/2)
-      //   .attr("width", rect_size)
-      //   .attr("height", rect_size)
-      //   .attr("rx", 3)
-      //   .attr("ry", 3)
-      // .attr("fill", () => {
-      //   if (!color_by_staircase) return "gray"
-      //   else {
-      //     if (possible_stair != undefined) {
-      //       if (how_many_stairs_share_this_edge == 2) return d3.interpolate("#F7C225", "#3C7BAE")(0.5)
-      //       if (index_of_possible_stair%2 == 0) return staircase_color_1
-      //       else return staircase_color_2
-      //     } else return "gray"
-      //   }
-      // })
-  
-      // svg.append("rect")
-      //   .attr("x", line_x - rect_size/2)
-      //   .attr("y", highestnode - rect_size/2)
-      //   .attr("width", rect_size)
-      //   .attr("height", rect_size)
-      //   .attr("rx", 3)
-      //   .attr("ry", 3)
-      //   .attr("fill", () => {
-      //     if (!color_by_staircase) return "gray"
-      //     else if (result.runways.length == 0) return "gray"
-      //     else {
-      //       let ind = parseInt(i)
-      //       let possible_runway = result.runways.find(s => s.includes(orderedges[i]))
-      //       console.log(possible_runway)
-      //       if (possible_runway != undefined) {
-      //         let col = "gray"
-              
-      //         if (orderedges[ind-1] != undefined){
-      //           let prevedge = graph.links.find(e => e.id == orderedges[ind-1])
-      //           if (node_h_dict[prevedge.source] == highestnode) col = "#F94144"
-      //           if (node_h_dict[prevedge.target] == highestnode) col = "#F94144"
-                
-      //         }
-      //         if (orderedges[ind+1] != undefined){
-      //           let nextedge = graph.links.find(e => e.id == orderedges[ind+1])
-      //           if (Math.round(10*node_h_dict[nextedge.source]) == Math.round(10*highestnode)) col = "#F94144"
-      //           if (Math.round(10*node_h_dict[nextedge.target]) == Math.round(10*highestnode)) col = "#F94144"
-      //         }
-      //         return col
-      //       }
-      //       else return "gray"
-      //     }})
-  
-      // svg.append("rect")
-      //   .attr("x", line_x - rect_size/2)
-      //   .attr("y", lowestnode - rect_size/2)
-      //   .attr("width", rect_size)
-      //   .attr("height", rect_size)
-      //   .attr("rx", 3)
-      //   .attr("ry", 3)
-      //   .attr("fill", () => {
-      //     if (!color_by_staircase) return "gray"
-      //     else if (result.runways.length == 0) return "gray"
-      //     else {
-      //       let ind = parseInt(i)
-      //       let possible_runway = result.runways.find(s => s.includes(orderedges[i]))
-      //       if (possible_runway != undefined) {
-      //         let col = "gray"
-              
-      //         if (orderedges[ind-1] != undefined){
-      //           let prevedge = graph.links.find(e => e.id == orderedges[ind-1])
-      //           if (node_h_dict[prevedge.source] == lowestnode) col = "#F94144"
-      //           if (node_h_dict[prevedge.target] == lowestnode) col = "#F94144"
-                
-      //         }
-      //         if (orderedges[ind+1] != undefined){
-      //           let nextedge = graph.links.find(e => e.id == orderedges[ind+1])
-      //           if (Math.round(10*node_h_dict[nextedge.source]) == Math.round(10*lowestnode)) col = "#F94144"
-      //           if (Math.round(10*node_h_dict[nextedge.target]) == Math.round(10*lowestnode)) col = "#F94144"
-      //         }
-      //         return col
-      //       }
-      //       else return "gray"
-      //     }})
-  
       if (show_edge_indices) svg.append("text")
         .attr("x", line_x - rect_size/2)
         .attr("y", padding.top - 8 + i%2 * 6)
@@ -226,20 +145,7 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
         .style("text-anchor", "start")
         .style("fill", "lightgray")
         .text(orderedges[i])
-
-      // svg.append("text")
-      //   .attr("x", svgwidth/2)
-      //   .attr("y", svgheight - 30)
-      //   .attr("text-anchor", "middle")
-      //   .text("quality: " + Math.round(result.stairQualities[result.stairQualities.length - 1]*100)/100)
-
-      // svg.append("text")
-      //   .attr("x", svgwidth/2)
-      //   .attr("y", svgheight - 30)
-      //   .attr("text-anchor", "middle")
-      //   .text("quality: " + Math.round(result.stairQualities[result.stairQualities.length - 1]*100)/100)
     }
     
-    
     return svg.node();
-  }
+}
