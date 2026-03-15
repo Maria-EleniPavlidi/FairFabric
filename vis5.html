@@ -115,61 +115,67 @@
     }
 
     function colorBreakdown(graph, solText) {
-      const idToColor = new Map(graph.nodes.map((n) => [String(n.id), (n.color || "unknown").toLowerCase()]));
-      const edgesMap = new Map(graph.links.map(e => [String(e.id), e]));
-      
-      const getOtherEnd = (edgeId, centerId) => {
-        const e = edgesMap.get(String(edgeId));
-        if (!e) return null;
-        return String(e.source) === String(centerId) ? String(e.target) : String(e.source);
-      };
+        const idToColor = new Map(graph.nodes.map((n) => [String(n.id), (n.color || "unknown").toLowerCase()]));
+        const edgesMap = new Map(graph.links.map(e => [String(e.id), e]));
+        
+        const getOtherEnd = (edgeId, centerId) => {
+            const e = edgesMap.get(String(edgeId));
+            if (!e) return null;
+            return String(e.source) === String(centerId) ? String(e.target) : String(e.source);
+        };
 
-      let genRed = 0, genBlue = 0;
-      graph.nodes.forEach(n => {
-        const c = (n.color || "").toLowerCase();
-        if (c === 'red') genRed++;
-        else if (c === 'blue') genBlue++;
-      });
+        let blueStaircases = 0;
+        let redStaircases = 0;
+        let mixedStaircases = 0;
+        let staircaseCount = 0;
 
-      let weightedRed = 0;
-      let weightedBlue = 0;
-      let staircaseCount = 0;
+        if (solText) {
+            const lines = solText.split("\n");
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line.startsWith("c_n")) continue; 
+                
+                const parts = line.split(/\s+/);
+                if (parts.length < 2 || !(parseFloat(parts[1]) > 0.5)) continue;
 
-      if (solText) {
-        const lines = solText.split("\n");
-        for (const rawLine of lines) {
-          const line = rawLine.trim();
-          // Look for the staircase variable prefix
-          if (!line.startsWith("c_n")) continue; 
-          
-          const parts = line.split(/\s+/);
-          if (parts.length < 2 || !(parseFloat(parts[1]) > 0.5)) continue;
+                const match = parts[0].match(/^c_n([^_\s]+)_e([^_\s]+)_([^_\s]+)_([^_\s]+)$/);
+                
+                if (match) {
+                    staircaseCount++;
+                    const centerId = match[1];
+                    const centerColor = idToColor.get(String(centerId));
 
-          // IMPROVED REGEX: Allows dots, dashes, and alphanumeric IDs
-          const match = parts[0].match(/^c_n([^_\s]+)_e([^_\s]+)_([^_\s]+)_([^_\s]+)$/);
-          
-          if (match) {
-            staircaseCount++;
-            const centerId = match[1];
-            const centerColor = idToColor.get(String(centerId));
+                    // Get colors of the 3 neighbors
+                    const neighborColors = [match[2], match[3], match[4]].map(eid => {
+                        const nodeId = getOtherEnd(eid, centerId);
+                        return idToColor.get(String(nodeId));
+                    });
 
-            // 1. Center node contribution (3x)
-            if (centerColor === 'red') weightedRed += 3;
-            else if (centerColor === 'blue') weightedBlue += 3;
+                    const redNeighbors = neighborColors.filter(c => c === 'red').length;
+                    const blueNeighbors = neighborColors.filter(c => c === 'blue').length;
 
-            // 2. Neighbor nodes contribution (1x each)
-            [match[2], match[3], match[4]].forEach(eid => {
-              const nodeId = getOtherEnd(eid, centerId);
-              const endColor = idToColor.get(String(nodeId));
-              if (endColor === 'red') weightedRed += 1;
-              else if (endColor === 'blue') weightedBlue += 1;
-            });
-          }
+                    if (centerColor === 'blue') {
+                        // Blue central node
+                        if (blueNeighbors >= 1) {
+                            blueStaircases++;
+                        } else if (redNeighbors === 3) {
+                            // Blue center + 3 red neighbors = Mixed
+                            mixedStaircases++;
+                        }
+                    } else if (centerColor === 'red') {
+                        // Red central node
+                        if (redNeighbors >= 1) {
+                            redStaircases++;
+                        } else if (blueNeighbors === 3) {
+                            // Red center + 3 blue neighbors = Mixed
+                            mixedStaircases++;
+                        }
+                    }
+                }
+            }
         }
-        console.log(`Parsed ${staircaseCount} staircases for a graph.`); // Debug check
-      }
 
-      return { staircaseCount, genRed, genBlue, weightedRed, weightedBlue };
+        return { staircaseCount, blueStaircases, redStaircases, mixedStaircases };
     }
 
     function compareIds(a, b) {
@@ -357,15 +363,17 @@
       const f05 = data.fair05;
 
       card.innerHTML = `
-        <h2>${data.graphName}</h2>
-        <pre class="sample-meta">nodes=${data.graph.nodes.length}, edges=${data.graph.links.length}
-    L2=0: status=${data.status0}, objective=${objective0}, active=${data.stats0.active}/${data.stats0.total}, c*=${f0.staircaseCount}, weightedRed=${f0.weightedRed}, weightedBlue=${f0.weightedBlue}, totalRed=${f0.genRed}, totalBlue=${f0.genBlue}
-    L2=0.5: status=${data.status05}, objective=${objective05}, active=${data.stats05.active}/${data.stats05.total}, c*=${f05.staircaseCount}, weightedRed=${f05.weightedRed}, weightedBlue=${f05.weightedBlue}, totalRed=${f05.genRed}, totalBlue=${f05.genBlue}</pre>
-        <section class="sample-panes">
-          <article class="sample-pane"><h3>Original</h3><div class="canvas-wrap" id="orig-${data.safeKey}"></div></article>
-          <article class="sample-pane"><h3>ILP (LAMBDA_2=0) - ${data.status0}</h3><div class="canvas-wrap" id="l20-${data.safeKey}"></div></article>
-          <article class="sample-pane"><h3>ILP (LAMBDA_2=0.5) - ${data.status05}</h3><div class="canvas-wrap" id="l205-${data.safeKey}"></div></article>
-        </section>
+          <h2>${data.graphName}</h2>
+          <pre class="sample-meta">nodes=${data.graph.nodes.length}, edges=${data.graph.links.length}
+  L2=0: status=${data.status0}, objective=${objective0}, total_c*=${f0.staircaseCount}
+        Blue Stairs: ${f0.blueStaircases} | Red Stairs: ${f0.redStaircases} | Mixed Stairs: ${f0.mixedStaircases}
+  L2=0.5: status=${data.status05}, objective=${objective05}, total_c*=${f05.staircaseCount}
+        Blue Stairs: ${f05.blueStaircases} | Red Stairs: ${f05.redStaircases} | Mixed Stairs: ${f05.mixedStaircases}</pre>
+          <section class="sample-panes">
+            <article class="sample-pane"><h3>Original</h3><div class="canvas-wrap" id="orig-${data.safeKey}"></div></article>
+            <article class="sample-pane"><h3>ILP (LAMBDA_2=0) - ${data.status0}</h3><div class="canvas-wrap" id="l20-${data.safeKey}"></div></article>
+            <article class="sample-pane"><h3>ILP (LAMBDA_2=0.5) - ${data.status05}</h3><div class="canvas-wrap" id="l205-${data.safeKey}"></div></article>
+          </section>
       `;
 
       samples.appendChild(card);
@@ -373,7 +381,7 @@
       renderPanel(card.querySelector(`#orig-${data.safeKey}`), data.graph, data.graph.nodes.map((n) => n.id), data.graph.links.map((e) => e.id));
       renderPanel(card.querySelector(`#l20-${data.safeKey}`), data.graph, data.orderNode0, data.orderEdge0);
       renderPanel(card.querySelector(`#l205-${data.safeKey}`), data.graph, data.orderNode05, data.orderEdge05);
-    }
+  }
 
     async function main() {
       setStatus("Loading 20 samples...");
