@@ -9,8 +9,11 @@ import time
 # =============================================================
 # Directory containing the LP models produced by the fairness
 INPUT_DIR = "data/rome-lib/group_2"
-
-LP_PATTERN = "partitioned_grafo*_fairness.lp"
+TARGET_GRAPH = "*"
+LP_PATTERNS = [
+    f"{TARGET_GRAPH}_fairness_l2_0.lp",
+    f"{TARGET_GRAPH}_fairness_l2_05.lp",
+]
 
 
 # =============================================================
@@ -148,124 +151,6 @@ def count_raw_endpoints(triplets, color_map, edge_map):
 
 
 # =============================================================
-# MERGED STAIRCASE COUNTING
-# =============================================================
-
-def count_direct_from_triplets(triplets, color_map, edge_map):
-    """
-    Reconstruct *real staircases* from overlapping triplets.
-
-    ------------------
-    The optimization model detects staircases using *triplets of edges*.
-    However, long staircases produce many overlapping triplets.
-
-    Example
-    -------
-
-        (e1,e2,e3)
-        (e2,e3,e4)
-        (e3,e4,e5)
-
-    These three triplets actually represent **one staircase** of
-    length 5 edges.
-
-    If we counted triplets independently we would overestimate
-    staircase endpoints and distort the fairness statistics.
-
-    Strategy
-    --------
-    1. Group triplets by their center node.
-    2. Collect all unique edges participating in those triplets.
-    3. Treat the union of these edges as a single staircase.
-
-    Endpoint accounting
-    -------------------
-    In BioFabric each edge contributes:
-
-        center node occurrence
-        outer node occurrence
-
-    Therefore a staircase with k edges contributes **2k endpoint
-    occurrences**.
-    """
-
-    red = 0
-    blue = 0
-
-    staircase_list = []
-
-    # ---------------------------------------------------------
-    # STEP 1: group triplets by center node
-    # ---------------------------------------------------------
-
-    by_center = {}
-
-    for t in triplets:
-
-        center = t["center"]
-
-        if center not in by_center:
-            by_center[center] = set()
-
-        # collect all edges appearing in the triplets
-        for e in t["edges"]:
-            by_center[center].add(e)
-
-    # ---------------------------------------------------------
-    # STEP 2: rebuild staircases
-    # ---------------------------------------------------------
-
-    for center, edges in by_center.items():
-
-        edges = sorted(edges)
-        num_edges = len(edges)
-
-        center_color = color_map.get(center)
-
-        # center node appears once per edge
-        if center_color == "red":
-            red += num_edges
-        elif center_color == "blue":
-            blue += num_edges
-
-        endpoint_list = []
-
-        # -----------------------------------------------------
-        # collect outer endpoints
-        # -----------------------------------------------------
-
-        for edge_id in edges:
-
-            if edge_id not in edge_map:
-                continue
-
-            source, target = edge_map[edge_id]
-
-            other_end = target if source == center else source
-
-            endpoint_list.append(other_end)
-
-            other_color = color_map.get(other_end)
-
-            if other_color == "red":
-                red += 1
-            elif other_color == "blue":
-                blue += 1
-
-        staircase_list.append({
-            "center": center,
-            "edges": edges,
-            "length": num_edges,
-            "center_color": center_color,
-            "endpoints": endpoint_list,
-            "endpoint_colors": [color_map.get(e) for e in endpoint_list],
-            "total_endpoint_occurrences": 2 * num_edges
-        })
-
-    return red, blue, staircase_list
-
-
-# =============================================================
 # SOLUTION FILE PARSER
 # =============================================================
 
@@ -341,7 +226,10 @@ def parse_solution(sol_path, color_map=None, edge_map=None):
 def main():
 
     # locate LP models
-    lp_files = glob.glob(os.path.join(INPUT_DIR, LP_PATTERN))
+    lp_files = []
+    for pattern in LP_PATTERNS:
+        lp_files.extend(glob.glob(os.path.join(INPUT_DIR, pattern)))
+    lp_files = sorted(set(lp_files))
 
     if not lp_files:
         print(f"No LP files found in {INPUT_DIR}.")
@@ -355,7 +243,6 @@ def main():
         "staircase_red_endpoints": 0,
         "staircase_blue_endpoints": 0,
         "expected_total_endpoints": 0,
-        "merged_total_endpoints": 0
     }
 
     # =========================================================
@@ -366,7 +253,9 @@ def main():
 
         sol_path = lp_path.replace(".lp", ".sol")
 
-        json_path = lp_path.replace("_fairness.lp", ".json")
+        json_path = lp_path
+        json_path = json_path.replace("_fairness_l2_0.lp", ".json")
+        json_path = json_path.replace("_fairness_l2_05.lp", ".json")
 
         print("\n" + "="*80)
         print(f"Processing {os.path.basename(lp_path)}")
@@ -378,7 +267,7 @@ def main():
         try:
 
             subprocess.run(
-                ["gurobi_cl", f"ResultFile={sol_path}", lp_path],
+                ["gurobi_cl", "TimeLimit=10", f"ResultFile={sol_path}", lp_path],
                 check=True,
                 capture_output=True,
                 text=True

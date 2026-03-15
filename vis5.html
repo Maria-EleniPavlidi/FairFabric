@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ILP Solver Visualization (20 Samples)</title>
+
+  <script src="libs/glpk.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="js/biofabric_rendering.js"></script>
+  <script src="js/biofabric_lp.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/helpers/stairsHelper.js"></script>
+  <script src="js/helpers/runwayHelper.js"></script>
+  <script src="js/analyzeGraph.js"></script>
+  <script src="js/heuristics.js"></script>
+  <script src="js/options.js"></script>
+
+  <link rel="stylesheet" href="vis.css" />
+  <style>
+    .samples { display: grid; gap: 16px; margin-top: 14px; }
+    .sample-card { border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px; }
+    .sample-card h2 { margin: 0 0 8px; font-size: 1rem; }
+    .sample-meta { margin: 0 0 10px; font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; font-size: 0.78rem; color: #34463d; white-space: pre-wrap; }
+    .sample-panes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .sample-pane { border: 1px solid var(--line); border-radius: 10px; overflow: auto; min-height: 320px; }
+    .sample-pane h3 { margin: 0; padding: 8px 10px; font-size: 0.9rem; border-bottom: 1px solid var(--line); background: #f8fbfa; }
+    .sample-pane .canvas-wrap { padding: 8px; }
+    @media (max-width: 1100px) { .sample-panes { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <h1>ILP Solver Results Viewer (20 Samples)</h1>
+    <p class="sub">Each sample shows original order vs ILP solution with <code>LAMBDA_2=0</code> and <code>LAMBDA_2=0.5</code>, plus per-run termination status.</p>
+    <div id="status" class="status"></div>
+    <section id="samples" class="samples"></section>
+  </main>
+
+  <script>
+    const SAMPLE_GRAPHS = [
+      "partitioned_grafo113.28",
+      "partitioned_grafo122.12",
+      "partitioned_grafo144.12",
+      "partitioned_grafo145.31",
+      "partitioned_grafo151.33",
+      "partitioned_grafo11168.34",
+      "partitioned_grafo11169.99",
+      "partitioned_grafo11170.33",
+      "partitioned_grafo11171.35",
+      "partitioned_grafo11172.41",
+      "partitioned_grafo11173.41",
+      "partitioned_grafo11174.91",
+      "partitioned_grafo11175.94",
+      "partitioned_grafo11176.100",
+      "partitioned_grafo11177.98",
+      "partitioned_grafo11178.95",
+      "partitioned_grafo11179.99",
+      "partitioned_grafo11180.34",
+      "partitioned_grafo11181.95",
+      "partitioned_grafo11182.99"
+    ];
+
+    function setStatus(message, isError = false) {
+      const status = document.getElementById("status");
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    }
+
+    async function fetchText(path) {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error("Could not read " + path + " (HTTP " + response.status + ")");
+      return response.text();
+    }
+
+    async function fetchTextAllowMissing(path) {
+      const response = await fetch(path);
+      if (!response.ok) return null;
+      return response.text();
+    }
+
+    async function fetchJson(path) {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error("Could not read " + path + " (HTTP " + response.status + ")");
+      return response.json();
+    }
+
+    function parseSolution(solText) {
+      let objective = null;
+      let active = 0;
+      let total = 0;
+      for (const line of solText.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith("#") && trimmed.toLowerCase().includes("objective value")) {
+          const m = trimmed.match(/=\s*([-+]?\d*\.?\d+)/);
+          if (m) objective = Number(m[1]);
+          continue;
+        }
+        const p = trimmed.split(/\s+/);
+        if (p.length < 2) continue;
+        const v = Number(p[1]);
+        if (Number.isNaN(v)) continue;
+        total += 1;
+        if (v > 0.5) active += 1;
+      }
+      return { objective, active, total };
+    }
+
+    function getRunStatus(solText, stats) {
+      if (!solText) return "missing_sol_file";
+      if (!stats || stats.total === 0) return "no_solution_values";
+      if (stats.objective === null) return "not_terminated_or_no_incumbent";
+      return "solved";
+    }
+
+    function colorBreakdown(graph, solText) {
+      const idToColor = new Map(graph.nodes.map((n) => [String(n.id), (n.color || "unknown").toLowerCase()]));
+      const edgesMap = new Map(graph.links.map(e => [String(e.id), e]));
+      
+      const getOtherEnd = (edgeId, centerId) => {
+        const e = edgesMap.get(String(edgeId));
+        if (!e) return null;
+        return String(e.source) === String(centerId) ? String(e.target) : String(e.source);
+      };
+
+      let genRed = 0, genBlue = 0;
+      graph.nodes.forEach(n => {
+        const c = (n.color || "").toLowerCase();
+        if (c === 'red') genRed++;
+        else if (c === 'blue') genBlue++;
+      });
+
+      let weightedRed = 0;
+      let weightedBlue = 0;
+      let staircaseCount = 0;
+
+      if (solText) {
+        const lines = solText.split("\n");
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          // Look for the staircase variable prefix
+          if (!line.startsWith("c_n")) continue; 
+          
+          const parts = line.split(/\s+/);
+          if (parts.length < 2 || !(parseFloat(parts[1]) > 0.5)) continue;
+
+          // IMPROVED REGEX: Allows dots, dashes, and alphanumeric IDs
+          const match = parts[0].match(/^c_n([^_\s]+)_e([^_\s]+)_([^_\s]+)_([^_\s]+)$/);
+          
+          if (match) {
+            staircaseCount++;
+            const centerId = match[1];
+            const centerColor = idToColor.get(String(centerId));
+
+            // 1. Center node contribution (3x)
+            if (centerColor === 'red') weightedRed += 3;
+            else if (centerColor === 'blue') weightedBlue += 3;
+
+            // 2. Neighbor nodes contribution (1x each)
+            [match[2], match[3], match[4]].forEach(eid => {
+              const nodeId = getOtherEnd(eid, centerId);
+              const endColor = idToColor.get(String(nodeId));
+              if (endColor === 'red') weightedRed += 1;
+              else if (endColor === 'blue') weightedBlue += 1;
+            });
+          }
+        }
+        console.log(`Parsed ${staircaseCount} staircases for a graph.`); // Debug check
+      }
+
+      return { staircaseCount, genRed, genBlue, weightedRed, weightedBlue };
+    }
+
+    function compareIds(a, b) {
+      const aNum = Number(a);
+      const bNum = Number(b);
+      const aIsNum = !Number.isNaN(aNum);
+      const bIsNum = !Number.isNaN(bNum);
+      if (aIsNum && bIsNum) return aNum - bNum;
+      return String(a).localeCompare(String(b), undefined, { numeric: true });
+    }
+
+    function parsePairwiseAssignments(solText, expectedIds, kind) {
+      const expectedSet = new Set(expectedIds.map((id) => String(id)));
+      const pairs = [];
+      const nodeRegex = /^y_(?:n)?([^_\s]+)_(?:n)?([^_\s]+)\s+([-+]?\d*\.?\d+)\s*$/;
+      const edgeRegex = /^x_(?:e)?([^_\s]+)_(?:e)?([^_\s]+)\s+([-+]?\d*\.?\d+)\s*$/;
+      const regex = kind === "node" ? nodeRegex : edgeRegex;
+
+      for (const rawLine of solText.split("\n")) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const match = line.match(regex);
+        if (!match) continue;
+
+        const a = String(match[1]);
+        const b = String(match[2]);
+        const value = Number(match[3]);
+        if (Number.isNaN(value)) continue;
+        if (!expectedSet.has(a) || !expectedSet.has(b)) continue;
+        if (compareIds(a, b) > 0) continue;
+
+        const before = value > 0.5 ? a : b;
+        const after = value > 0.5 ? b : a;
+        pairs.push([before, after]);
+      }
+      return { pairs };
+    }
+
+    function parseEdgeOrderFromPos(solText, expectedEdgeIds) {
+      const expectedSet = new Set(expectedEdgeIds.map((id) => String(id)));
+      const posByEdge = new Map();
+      for (const rawLine of solText.split("\n")) {
+        const line = rawLine.trim();
+        const m = line.match(/^pos_e([^_\s]+)\s+([-+]?\d*\.?\d+)\s*$/);
+        if (!m) continue;
+        const edgeId = String(m[1]);
+        const pos = Number(m[2]);
+        if (Number.isNaN(pos)) continue;
+        if (!expectedSet.has(edgeId)) continue;
+        posByEdge.set(edgeId, pos);
+      }
+
+      const present = expectedEdgeIds
+        .map((id) => String(id))
+        .filter((id) => posByEdge.has(id))
+        .sort((a, b) => {
+          const d = posByEdge.get(a) - posByEdge.get(b);
+          if (d !== 0) return d;
+          return compareIds(a, b);
+        });
+
+      const missing = expectedEdgeIds
+        .map((id) => String(id))
+        .filter((id) => !posByEdge.has(id))
+        .sort((a, b) => compareIds(a, b));
+
+      return { order: [...present, ...missing] };
+    }
+
+    function deriveOrderFromPairs(ids, pairs) {
+      const keys = ids.map((id) => String(id));
+      const score = new Map(keys.map((k) => [k, 0]));
+      const out = new Map(keys.map((k) => [k, new Set()]));
+      const indeg = new Map(keys.map((k) => [k, 0]));
+
+      for (const [before, after] of pairs) {
+        if (before === after) continue;
+        if (!out.get(before).has(after)) {
+          out.get(before).add(after);
+          indeg.set(after, indeg.get(after) + 1);
+        }
+        score.set(before, score.get(before) + 1);
+        score.set(after, score.get(after) - 1);
+      }
+
+      const queue = keys.filter((k) => indeg.get(k) === 0);
+      const ordered = [];
+
+      while (queue.length) {
+        queue.sort((a, b) => (score.get(b) - score.get(a)) || a.localeCompare(b, undefined, { numeric: true }));
+        const cur = queue.shift();
+        ordered.push(cur);
+        for (const nxt of out.get(cur)) {
+          indeg.set(nxt, indeg.get(nxt) - 1);
+          if (indeg.get(nxt) === 0) queue.push(nxt);
+        }
+      }
+
+      if (ordered.length !== keys.length) {
+        return [...keys].sort((a, b) => (score.get(b) - score.get(a)) || a.localeCompare(b, undefined, { numeric: true }));
+      }
+      return ordered;
+    }
+
+    function renderPanel(targetEl, graph, nodeOrder, edgeOrder) {
+      targetEl.innerHTML = "";
+      const nodesById = new Map(graph.nodes.map((n) => [String(n.id), n]));
+      const edgesById = new Map(graph.links.map((e) => [String(e.id), e]));
+      const orderedNodes = nodeOrder.map((id) => nodesById.get(String(id))).filter(Boolean);
+      const orderedEdges = edgeOrder.map((id) => edgesById.get(String(id))).filter(Boolean);
+      const analysis = analyzeGraph(orderedNodes, orderedEdges);
+      targetEl.appendChild(render_biofabric(graph, nodeOrder, edgeOrder, analysis, "a", "b", false, 8, 8, true, true));
+    }
+
+    
+    async function loadSample(graphName) {
+      const base = "data/rome-lib/group_2/" + graphName;
+      const graphPath = base + ".json";
+      const sol0Path = base + "_fairness_l2_0.sol";
+      const sol05Path = base + "_fairness_l2_05.sol";
+
+      const [graph, sol0, sol05] = await Promise.all([
+        fetchJson(graphPath),
+        fetchTextAllowMissing(sol0Path),
+        fetchTextAllowMissing(sol05Path)
+      ]);
+
+      const defaultNodeOrder = graph.nodes.map((n) => n.id);
+      const defaultEdgeOrder = graph.links.map((e) => e.id);
+      const nodeIdMap = new Map(graph.nodes.map((n) => [String(n.id), n.id]));
+      const edgeIdMap = new Map(graph.links.map((e) => [String(e.id), e.id]));
+
+      const stats0 = sol0 ? parseSolution(sol0) : { objective: null, active: 0, total: 0 };
+      const stats05 = sol05 ? parseSolution(sol05) : { objective: null, active: 0, total: 0 };
+      const status0 = getRunStatus(sol0, stats0);
+      const status05 = getRunStatus(sol05, stats05);
+
+      const node0 = sol0 ? parsePairwiseAssignments(sol0, defaultNodeOrder, "node") : { pairs: [] };
+      const edge0 = sol0 ? parseEdgeOrderFromPos(sol0, defaultEdgeOrder) : { order: defaultEdgeOrder.map((e) => String(e)) };
+      const orderNode0 = sol0
+        ? deriveOrderFromPairs(defaultNodeOrder, node0.pairs).map((id) => nodeIdMap.get(id))
+        : defaultNodeOrder.slice();
+      const orderEdge0 = sol0
+        ? edge0.order.map((id) => edgeIdMap.get(id)).filter((id) => id !== undefined)
+        : defaultEdgeOrder.slice();
+
+      const node05 = sol05 ? parsePairwiseAssignments(sol05, defaultNodeOrder, "node") : { pairs: [] };
+      const edge05 = sol05 ? parseEdgeOrderFromPos(sol05, defaultEdgeOrder) : { order: defaultEdgeOrder.map((e) => String(e)) };
+      const orderNode05 = sol05
+        ? deriveOrderFromPairs(defaultNodeOrder, node05.pairs).map((id) => nodeIdMap.get(id))
+        : defaultNodeOrder.slice();
+      const orderEdge05 = sol05
+        ? edge05.order.map((id) => edgeIdMap.get(id)).filter((id) => id !== undefined)
+        : defaultEdgeOrder.slice();
+
+      const fair0 = sol0 ? colorBreakdown(graph, sol0) : { staircaseActive: 0, byColor: {} };
+      const fair05 = sol05 ? colorBreakdown(graph, sol05) : { staircaseActive: 0, byColor: {} };
+
+      return {
+        graphName,
+        safeKey: graphName.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        graph,
+        orderNode0,
+        orderEdge0,
+        orderNode05,
+        orderEdge05,
+        stats0,
+        stats05,
+        status0,
+        status05,
+        fair0,
+        fair05
+      };
+    }
+
+    function renderSampleCard(data) {
+      const samples = document.getElementById("samples");
+      const card = document.createElement("article");
+      card.className = "sample-card";
+
+      const objective0 = data.stats0.objective === null ? "n/a" : data.stats0.objective;
+      const objective05 = data.stats05.objective === null ? "n/a" : data.stats05.objective;
+
+      const f0 = data.fair0;
+      const f05 = data.fair05;
+
+      card.innerHTML = `
+        <h2>${data.graphName}</h2>
+        <pre class="sample-meta">nodes=${data.graph.nodes.length}, edges=${data.graph.links.length}
+    L2=0: status=${data.status0}, objective=${objective0}, active=${data.stats0.active}/${data.stats0.total}, c*=${f0.staircaseCount}, weightedRed=${f0.weightedRed}, weightedBlue=${f0.weightedBlue}, totalRed=${f0.genRed}, totalBlue=${f0.genBlue}
+    L2=0.5: status=${data.status05}, objective=${objective05}, active=${data.stats05.active}/${data.stats05.total}, c*=${f05.staircaseCount}, weightedRed=${f05.weightedRed}, weightedBlue=${f05.weightedBlue}, totalRed=${f05.genRed}, totalBlue=${f05.genBlue}</pre>
+        <section class="sample-panes">
+          <article class="sample-pane"><h3>Original</h3><div class="canvas-wrap" id="orig-${data.safeKey}"></div></article>
+          <article class="sample-pane"><h3>ILP (LAMBDA_2=0) - ${data.status0}</h3><div class="canvas-wrap" id="l20-${data.safeKey}"></div></article>
+          <article class="sample-pane"><h3>ILP (LAMBDA_2=0.5) - ${data.status05}</h3><div class="canvas-wrap" id="l205-${data.safeKey}"></div></article>
+        </section>
+      `;
+
+      samples.appendChild(card);
+
+      renderPanel(card.querySelector(`#orig-${data.safeKey}`), data.graph, data.graph.nodes.map((n) => n.id), data.graph.links.map((e) => e.id));
+      renderPanel(card.querySelector(`#l20-${data.safeKey}`), data.graph, data.orderNode0, data.orderEdge0);
+      renderPanel(card.querySelector(`#l205-${data.safeKey}`), data.graph, data.orderNode05, data.orderEdge05);
+    }
+
+    async function main() {
+      setStatus("Loading 20 samples...");
+      const failures = [];
+      const counters = {
+        solved: 0,
+        missing_sol_file: 0,
+        no_solution_values: 0,
+        not_terminated_or_no_incumbent: 0
+      };
+      for (const graphName of SAMPLE_GRAPHS) {
+        try {
+          const data = await loadSample(graphName);
+          counters[data.status0] = (counters[data.status0] || 0) + 1;
+          counters[data.status05] = (counters[data.status05] || 0) + 1;
+          renderSampleCard(data);
+        } catch (e) {
+          console.error(e);
+          failures.push(`${graphName}: ${e.message}`);
+        }
+      }
+      if (failures.length) {
+        setStatus("Loaded with errors:\n" + failures.join("\n"), true);
+      } else {
+        setStatus(
+          "Loaded 20 samples. " +
+          "statuses across both runs (40 total): " +
+          "solved=" + counters.solved +
+          ", missing_sol_file=" + counters.missing_sol_file +
+          ", no_solution_values=" + counters.no_solution_values +
+          ", not_terminated_or_no_incumbent=" + counters.not_terminated_or_no_incumbent
+        );
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
