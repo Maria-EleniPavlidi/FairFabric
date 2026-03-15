@@ -1,18 +1,27 @@
 class Biofabric_lp{
-    constructor(graph, options){
+    constructor(graph, useFairnessParam = false, fairnessWeights = {lambda1: 0.0, lambda2: 0.5}){
         this.g = graph;
         this.model = {};
         this.m = 50;
         this.zcount = 0;
         this.verbose = false;
         this.mip = true;
-
-        this.options = options;
+    
+        // Use the options if provided, otherwise default
+        this.options = (typeof options !== 'undefined') ? options : {
+            optimization_objective: 1,
+            timeout_value: 300,
+            solve_adjacency: false
+        };
 
         this.mode = "triplets";
 
-        // remove edge with id 17
-        // this.g.links = this.g.links.filter(e => e.id != 17)
+        // FAIRNESS ADDITIONS
+        this.useFairness = useFairnessParam;
+        this.fairnessWeights = fairnessWeights;
+
+        this.blueNodes = this.g.nodes.filter(n => n.color === 'blue').length;
+        this.redNodes = this.g.nodes.filter(n => n.color === 'red').length;
     }
 
     async arrange(){
@@ -21,7 +30,7 @@ class Biofabric_lp{
         this.makeModel()
 
         let startTime2 = new Date().getTime()
-        
+       
         this.solve()
 
         this.elapsedTime = new Date().getTime() - this.startTime;
@@ -55,6 +64,9 @@ class Biofabric_lp{
 
         let added_xvars = []
         let added_cvars = []
+
+        // Variables for fairness calculation
+        let c_vars_with_endpoints = []; // Store {c_var, blueEndpoints, redEndpoints}
 
         // find redundant edges: edges that can't participate in a staircase because they are not connected to a node with degree > 2
         let redundant_edges = this.g.links.filter(e => {
@@ -96,13 +108,13 @@ class Biofabric_lp{
         for (let i = 0; i < this.g.nodes.length - 2; i++){
             if (this.verbose) console.log("adding transitivity constraints on y", i)
             for (let j = i + 1; j < this.g.nodes.length - 1; j++){
-              for (let k = j + 1; k < this.g.nodes.length; k++){
+            for (let k = j + 1; k < this.g.nodes.length; k++){
                 if (i == j || i == k || j == k) continue;
-                
+               
                 let y_ab = "y_n" + this.g.nodes[i].id + "n" + this.g.nodes[j].id
                 let y_bc = "y_n" + this.g.nodes[j].id + "n" + this.g.nodes[k].id
                 let y_ac = "y_n" + this.g.nodes[i].id + "n" + this.g.nodes[k].id
-                
+               
                 // check that all these exist
                 if (!added_xvars.includes(y_ab)) console.warn(y_ab + " not found")
                 if (!added_xvars.includes(y_bc)) console.warn(y_bc + " not found")
@@ -110,20 +122,20 @@ class Biofabric_lp{
 
                 this.model.subjectTo += y_ab + " + " + y_bc + " - " + y_ac + " >= 0\n"
                 this.model.subjectTo += "- " + y_ab + " - " + y_bc + " + " + y_ac + " >= - 1\n"
-              }
             }
-          }
+            }
+        }
 
         // compute position of edges
         for (let e1 of this.g.links){
-            let pos_e1 = "pos_e" + e1.id 
+            let pos_e1 = "pos_e" + e1.id
             let tmp_accumulator = this.g.links.length - 1;
 
             for (let e2 of this.g.links){
                 if (e1 == e2) continue;
                 let x_e1e2 = "x_e" + e1.id + "e" + e2.id
-                
-                
+               
+               
                 if (!added_xvars.includes(x_e1e2)) {
                     pos_e1 += " - " + "x_e" + e2.id + "e" + e1.id
                     tmp_accumulator -= 1
@@ -151,7 +163,7 @@ class Biofabric_lp{
 
                     this.model.subjectTo += "pos_e" + edge2.id + " - pos_e" + edge1.id + " + " + this.m + " " + z1 + " <= " + (1 + this.m + 0.01) + "\n"
                     this.model.subjectTo += "pos_e" + edge2.id + " - pos_e" + edge1.id + " - " + this.m + " " + z1 + " >= " + (- 1 - this.m - 0.01) + "\n"
-                    
+                   
                     this.model.bounds += "binary " + z1 + "\n"
 
                     this.model.subjectTo += "pos_e" + edge1.id + " <= " + this.g.links.length + "\n"
@@ -160,7 +172,7 @@ class Biofabric_lp{
             }
         }
 
-        // compute objective values
+        // Compute objective values and count endpoints
         for (let n of this.g.nodes){
             let adjacent_edges = this.g.links.filter(e => e.source == n.id || e.target == n.id)
             // can't be a staircase if the node has less than 3 neighbors
@@ -181,17 +193,14 @@ class Biofabric_lp{
                         let othernode2 = edges_sorted_by_their_ids[1].source == n.id ? edges_sorted_by_their_ids[1].target : edges_sorted_by_their_ids[1].source
                         let othernode3 = edges_sorted_by_their_ids[2].source == n.id ? edges_sorted_by_their_ids[2].target : edges_sorted_by_their_ids[2].source
 
-                        let c = "c_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[2] + "_";
-                        let r = "r_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[2] + "_";
-                        let s = "s_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[2] + "_";
-                        
+                        // FIXED: Remove trailing underscores from variable names
+                        let c1 = "c_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[2];
+                        let c2 = "c_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[2] + "_e" + sorted_edge_ids[1];
+                        let c3 = "c_n" + n.id + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[2];
+
                         let z1 = "z_e" + sorted_edge_ids[0] + "e" + sorted_edge_ids[1];
                         let z2 = "z_e" + sorted_edge_ids[1] + "e" + sorted_edge_ids[2];
                         let z3 = "z_e" + sorted_edge_ids[0] + "e" + sorted_edge_ids[2];
-
-                        let c1 = "c_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[2] + "_";
-                        let c2 = "c_n" + n.id + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[2] + "_e" + sorted_edge_ids[1] + "_";
-                        let c3 = "c_n" + n.id + "_e" + sorted_edge_ids[1] + "_e" + sorted_edge_ids[0] + "_e" + sorted_edge_ids[2] + "_";
 
                         let accumulator1 = 0;
                         let accumulator2 = 0;
@@ -207,9 +216,7 @@ class Biofabric_lp{
                         if (!added_xvars.includes(y2)) {y2 = "y_n" + othernode3 + "n" + othernode2; accumulator2 += 1; y2sign = "-"}
                         if (!added_xvars.includes(y3)) {y3 = "y_n" + othernode3 + "n" + othernode1; accumulator3 += 1; y3sign = "-"}
 
-                        // console.log("c2", c2, y2, y3, accumulator2, accumulator3)
-
-                        this.model.subjectTo    += c1 
+                        this.model.subjectTo    += c1
                                                 + " - " + z1
                                                 + " <= 0\n"
                         this.model.subjectTo    += c1
@@ -256,14 +263,14 @@ class Biofabric_lp{
                                                 + " <= " + (0 + accumulator1 + accumulator3) + "\n"
 
                         this.model.subjectTo    += c3
-                                                + (y1sign == "+"? " + " : " - ") + y1   
+                                                + (y1sign == "+"? " + " : " - ") + y1  
                                                 + (y3sign == "+"? " + " : " - ") + y3
                                                 + " <= " + (2 - accumulator1 - accumulator3) + "\n"
 
                         this.model.subjectTo    += c1 + " + " + c2 + " + " + c3 + " <= 1\n"
 
-                        this.model.subjectTo    += c1 
-                                                + " - 0.5 " + z1 
+                        this.model.subjectTo    += c1
+                                                + " - 0.5 " + z1
                                                 + " - 0.5 " + z2
                                                 + " - 0.5 " + z3
                                                 +  " <= 0\n"
@@ -292,12 +299,81 @@ class Biofabric_lp{
                         added_cvars.push(c1)
                         added_cvars.push(c2)
                         added_cvars.push(c3)
+
+                        // Calculate blue and red endpoints for this staircase
+                        let endpoints = this.countEndpoints(n.id, [othernode1, othernode2, othernode3]);
+                        let blueEndpoints1 = endpoints.blueEndpoints;
+                        let redEndpoints1 = endpoints.redEndpoints;
+
+                        // Store the endpoint information
+                        c_vars_with_endpoints.push({c_var: c1, blueEndpoints: blueEndpoints1, redEndpoints: redEndpoints1});
+                        c_vars_with_endpoints.push({c_var: c2, blueEndpoints: blueEndpoints1, redEndpoints: redEndpoints1});
+                        c_vars_with_endpoints.push({c_var: c3, blueEndpoints: blueEndpoints1, redEndpoints: redEndpoints1});
                     }
                 }
             }
         }
 
-        this.model.objective_function = this.model.objective_function.substring(0, this.model.objective_function.length - 2) + "\n\n"
+        // PROPER ENDPOINT-LEVEL FAIRNESS IMPLEMENTATION
+        if (this.useFairness && c_vars_with_endpoints.length > 0) {
+            console.log("DEBUG: Building endpoint-level fairness constraints");
+           
+            let Rtotal = this.redNodes;
+            let Btotal = this.blueNodes;
+           
+            // Variables for total blue and red endpoints across ALL staircases
+            let total_blue_endpoints = "total_blue_eps";
+            let total_red_endpoints = "total_red_eps";
+            let fairness_imbalance = "fairness_imbalance";
+           
+            // Build expressions for total blue and red endpoints
+            let blue_ep_terms = [];
+            let red_ep_terms = [];
+            let original_objective_terms = [];
+           
+            for (let item of c_vars_with_endpoints) {
+                blue_ep_terms.push(item.blueEndpoints + " " + item.c_var);
+                red_ep_terms.push(item.redEndpoints + " " + item.c_var);
+                original_objective_terms.push(item.c_var);
+            }
+           
+            let blue_ep_expression = blue_ep_terms.join(" + ");
+            let red_ep_expression = red_ep_terms.join(" + ");
+            let original_objective = original_objective_terms.join(" + ");
+           
+            // Define total endpoint variables
+            this.model.subjectTo += total_blue_endpoints + " - (" + blue_ep_expression + ") = 0\n";
+            this.model.subjectTo += total_red_endpoints + " - (" + red_ep_expression + ") = 0\n";
+           
+            // Fairness constraint: |total_blue_endpoints - total_red_endpoints| <= fairness_imbalance
+            this.model.subjectTo += fairness_imbalance + " >= " + total_blue_endpoints + " - " + total_red_endpoints + "\n";
+            this.model.subjectTo += fairness_imbalance + " >= " + total_red_endpoints + " - " + total_blue_endpoints + "\n";
+           
+            // Bounds
+            this.model.bounds += "0 <= " + total_blue_endpoints + "\n";
+            this.model.bounds += "0 <= " + total_red_endpoints + "\n";
+            this.model.bounds += "0 <= " + fairness_imbalance + "\n";
+           
+            let lambda1 = this.fairnessWeights.lambda1;
+            let lambda2 = this.fairnessWeights.lambda2;
+           
+            // Objective: maximize staircases - penalty * imbalance
+            this.model.objective_function = "Maximize \n";
+            this.model.objective_function += lambda1 + " (" + original_objective + ") - " + lambda2 + " " + fairness_imbalance + "\n";
+           
+            console.log("DEBUG: Endpoint-level fairness constraints built");
+           
+        } else {
+            // Handle non-fairness case
+            let obj = this.model.objective_function.trim();
+            if (obj.endsWith("+")) {
+                obj = obj.substring(0, obj.length - 1).trim();
+            }
+            if (obj.endsWith(" ")) {
+                obj = obj.substring(0, obj.length - 1).trim();
+            }
+            this.model.objective_function = obj + "\n\n";
+        }
 
         // every edge can participate in at most 2 staircases, or 3 if they all share a central node
         for (let e of this.g.links){
@@ -317,7 +393,7 @@ class Biofabric_lp{
             }
 
             if (Object.keys(cvars_by_node).length == 1) continue;
-            
+           
             // if the cvars have a different central node, they can only be part of 2 staircases
             for (let i = 0; i < Object.keys(cvars_by_node).length; i++){
                 let n1 = Object.keys(cvars_by_node)[i];
@@ -346,7 +422,7 @@ class Biofabric_lp{
 
             // get the nodes at the other endpoint of these edges
             let neighbors = adjacent_edges.map(e => e.source == node.id ? e.target : e.source)
-            
+           
             // console.log(node.id, neighbors)
             // get three neighbors that either have a degree of 1 or 2
             let neighbors_to_consider = neighbors.filter(n => this.g.links.filter(e => e.source == n || e.target == n).length < 3)
@@ -365,6 +441,29 @@ class Biofabric_lp{
             }
         }
     }
+    // Method to count blue and red endpoints for a staircase
+    countEndpoints(centralNodeId, otherNodeIds) {
+        let blueCount = 0;
+        let redCount = 0;
+    
+        let centralNode = this.g.nodes.find(n => n.id == centralNodeId);
+        if (centralNode && centralNode.color === 'blue') {
+            blueCount += 3; 
+        } else if (centralNode && centralNode.color === 'red') {
+            redCount += 3; 
+        }
+    
+        for (let nodeId of otherNodeIds) {
+            let node = this.g.nodes.find(n => n.id == nodeId);
+            if (node && node.color === 'blue') {
+                blueCount += 1;
+            } else if (node && node.color === 'red') {
+                redCount += 1;
+            }
+        }
+    
+        return { blueEndpoints: blueCount, redEndpoints: redCount };
+    }
 
     solve(){
         let prob = this.modelToString(this.model)
@@ -379,7 +478,7 @@ class Biofabric_lp{
         glp_read_lp_from_string(lp, null, prob);
 
         glp_scale_prob(lp, GLP_SF_AUTO);
-            
+           
         let smcp = new SMCP({presolve: GLP_ON});
         glp_simplex(lp, smcp);
 
@@ -452,14 +551,14 @@ class Biofabric_lp{
 
         // compute position of edges
         for (let e1 of this.g.links){
-            let pos_e1 = "pos_e" + e1.id 
+            let pos_e1 = "pos_e" + e1.id
             let tmp_accumulator = this.g.links.length - 1;
 
             for (let e2 of this.g.links){
                 if (e1 == e2) continue;
                 let x_e1e2 = "x_e" + e1.id + "e" + e2.id
-                
-                
+               
+               
                 if (!added_xvars.includes(x_e1e2)) {
                     pos_e1 += " - " + "x_e" + e2.id + "e" + e1.id
                     tmp_accumulator -= 1
@@ -487,7 +586,7 @@ class Biofabric_lp{
 
                     this.model.subjectTo += "pos_e" + edge2.id + " - pos_e" + edge1.id + " + " + this.m + " " + z1 + " <= " + (1 + this.m + 0.01) + "\n"
                     this.model.subjectTo += "pos_e" + edge2.id + " - pos_e" + edge1.id + " - " + this.m + " " + z1 + " >= " + (- 1 - this.m - 0.01) + "\n"
-                    
+                   
                     this.model.bounds += "binary " + z1 + "\n"
                 }
             }
@@ -525,14 +624,14 @@ class Biofabric_lp{
                         this.model.subjectTo += c + " - " + z1 + " <= 0\n"
                         this.model.subjectTo += c + " - " + z2 + " <= 0\n"
 
-                        this.model.subjectTo += c 
-                            + " - " + z1 
-                            + " - " + z2 
+                        this.model.subjectTo += c
+                            + " - " + z1
+                            + " - " + z2
                             + " >= - 1\n"
 
                         this.model.objective_function += c + " + "
                         this.model.bounds += "binary " + c + "\n"
-                    
+                   
                     }
                 }
             }
@@ -542,7 +641,7 @@ class Biofabric_lp{
         // for (let e of this.g.links){
         //     let cvars = added_cvars.filter(c => c.includes("_e" + e.id + "_"))
         //     if (cvars.length == 0) continue;
-            
+           
         //     // get all triplets of cvars
         //     for (let i = 0; i < cvars.length - 2; i++){
         //         for (let j = i + 1; j < cvars.length - 1; j++){
@@ -577,7 +676,7 @@ class Biofabric_lp{
 
         //     // get the nodes at the other endpoint of these edges
         //     let neighbors = adjacent_edges.map(e => e.source == node.id ? e.target : e.source)
-            
+           
         //     // get three neighbors that either have a degree of 1
         //     let neighbors_to_consider = neighbors.filter(n => this.g.links.filter(e => e.source == n || e.target == n).length < 2)
 
@@ -641,7 +740,7 @@ class Biofabric_lp{
             this.model.subjectTo += "u_" + this.g.links[i].id + " >= 2\n"
             this.model.subjectTo += "u_" + this.g.links[i].id + " <= " + this.g.links.length + "\n"
         }
-            
+           
         // compute objective values
         for (let n of this.g.nodes){
             let adjacent_edges = this.g.links.filter(e => e.source == n.id || e.target == n.id)
@@ -676,9 +775,9 @@ class Biofabric_lp{
                         this.model.subjectTo += c3 + " - " + z2 + " <= 0\n"
                         this.model.subjectTo += c3 + " - " + z3 + " <= 0\n"
 
-                        this.model.subjectTo += c1 
-                            + " - " + z1 
-                            + " - " + z2 
+                        this.model.subjectTo += c1
+                            + " - " + z1
+                            + " - " + z2
                             + " >= - 1\n"
 
                         this.model.subjectTo += c2
@@ -701,7 +800,7 @@ class Biofabric_lp{
                 }
             }
         }
-        
+       
         this.model.objective_function = this.model.objective_function.substring(0, this.model.objective_function.length - 2) + "\n\n"
     }
 
@@ -744,7 +843,7 @@ class Biofabric_lp{
                 let e2 = this.g.links[j].id
                 // redundant edges do not need adjacency
                 if (redundant_edges.includes(this.g.links[i]) || redundant_edges.includes(this.g.links[j])) continue;
-                // sort indices 
+                // sort indices
                 let a = e1 < e2 ? e1 : e2
                 let b = e1 < e2 ? e2 : e1
                 let l_e = "l_e" + e1 + "e" + e2
@@ -781,7 +880,7 @@ class Biofabric_lp{
 
         // the sum of all l_e must be equal to the number of edges
         // this.model.subjectTo += added_le.join(" + ") + " = " + (this.g.links.length - 1) + "\n"
-            
+           
         // compute objective values
         for (let n of this.g.nodes){
             let adjacent_edges = this.g.links.filter(e => e.source == n.id || e.target == n.id)
@@ -817,9 +916,9 @@ class Biofabric_lp{
                         this.model.subjectTo += c3 + " - " + z3 + " <= 0\n"
                         // this.model.subjectTo += c1 + " - " + z1 + " - " + z2 + " - " + z3 + " <= - 1\n"
 
-                        this.model.subjectTo += c1 
-                            + " - " + z1 
-                            + " - " + z2 
+                        this.model.subjectTo += c1
+                            + " - " + z1
+                            + " - " + z2
                             + " >= - 1\n"
 
                         this.model.subjectTo += c2
@@ -838,12 +937,12 @@ class Biofabric_lp{
                         this.model.objective_function += c2 + " + "
                         this.model.objective_function += c3 + " + "
                         this.model.bounds += "binary " + c1 + "\n"
-                    
+                   
                     }
                 }
             }
         }
-        
+       
         this.model.objective_function = this.model.objective_function.substring(0, this.model.objective_function.length - 2) + "\n\n"
     }
 
@@ -871,7 +970,7 @@ class Biofabric_lp{
             for (let e2 = 0; e2 < this.g.links.length; e2++){
                 // if (redundant_edges.includes(this.g.links[e2])) continue;
                 if (e1 == e2) continue;
-                // sort indices 
+                // sort indices
                 let a = e1 < e2 ? e1 : e2
                 let b = e1 < e2 ? e2 : e1
                 let l_e = "l_e" + e1 + "e" + e2
@@ -895,7 +994,7 @@ class Biofabric_lp{
 
         if (this.g.links.filter(e => !redundant_edges.includes(e)).map(e => e.id).length > 13) return;
 
-        // get all possible combinations 
+        // get all possible combinations
         let combinations = this.combinations(this.g.links.filter(e => !redundant_edges.includes(e)).map(e => e.id)).filter(c => c.length >= 3)
         // console.log(combinations.length, this.g.links.filter(e => !redundant_edges.includes(e)).map(e => e.id).length)
         if (combinations.length > 10000){return;}
@@ -909,7 +1008,7 @@ class Biofabric_lp{
             }
             this.model.subjectTo += string_to_add + " <= " + (combination.length - 1) + "\n"
         }
-            
+           
         // compute objective values
         for (let n of this.g.nodes){
             let adjacent_edges = this.g.links.filter(e => e.source == n.id || e.target == n.id)
@@ -945,9 +1044,9 @@ class Biofabric_lp{
                         this.model.subjectTo += c3 + " - " + z3 + " <= 0\n"
                         // this.model.subjectTo += c1 + " - " + z1 + " - " + z2 + " - " + z3 + " <= - 1\n"
 
-                        this.model.subjectTo += c1 
-                            + " - " + z1 
-                            + " - " + z2 
+                        this.model.subjectTo += c1
+                            + " - " + z1
+                            + " - " + z2
                             + " >= - 1\n"
 
                         this.model.subjectTo += c2
@@ -966,12 +1065,12 @@ class Biofabric_lp{
                         this.model.objective_function += c2 + " + "
                         this.model.objective_function += c3 + " + "
                         this.model.bounds += "binary " + c1 + "\n"
-                    
+                   
                     }
                 }
             }
         }
-        
+       
         this.model.objective_function = this.model.objective_function.substring(0, this.model.objective_function.length - 2) + "\n\n"
     }
 
@@ -1000,7 +1099,7 @@ class Biofabric_lp{
         }
         return combs;
     }
-    
+   
     combinations(set) {
         var k, i, combs, k_combs;
         combs = [];
@@ -1027,7 +1126,7 @@ class Biofabric_lp{
             let sum_right_e1 = ""
             for (let e2 = 0; e2 < this.g.links.length; e2++){
                 if (e1 == e2) continue;
-                // sort indices 
+                // sort indices
                 let a = e1 < e2 ? e1 : e2
                 let b = e1 < e2 ? e2 : e1
                 let l_e = "l_e" + e1 + "e" + e2
@@ -1092,9 +1191,9 @@ class Biofabric_lp{
                         this.model.subjectTo += c1 + " - " + z2 + " <= 0\n"
                         // this.model.subjectTo += c1 + " - " + z1 + " - " + z2 + " - " + z3 + " <= - 1\n"
 
-                        this.model.subjectTo += c1 
-                            + " - " + z1 
-                            + " - " + z2 
+                        this.model.subjectTo += c1
+                            + " - " + z1
+                            + " - " + z2
                             + " >= - 1\n"
 
                         // this.model.subjectTo += c1
@@ -1111,7 +1210,7 @@ class Biofabric_lp{
 
                         this.model.objective_function += c1 + " + "
                         this.model.bounds += "binary " + c1 + "\n"
-                    
+                   
                     }
                 }
             }
@@ -1135,7 +1234,7 @@ class Biofabric_lp{
             // console.log(edges_without_left_neighbors.map(e => e.id))
             // in this.result, print all l_e that are 1
             // console.log(Object.keys(this.result).filter(k => k.includes("l_e") && this.result[k] == 1))
-        
+       
             let new_edge_list = []
             let next_edge;
             let next_next_edge;
@@ -1150,7 +1249,7 @@ class Biofabric_lp{
                 // find the edge that has the next_edge as a left neighbor
                 next_next_edge = this.g.links.find(e => this.result["l_e" + e.id + "e" + next_edge.id] == 1)
                 if (next_next_edge != undefined && next_next_edge.visited == true) console.warn("solution contains loops", next_edge.id, next_next_edge.id)
-                
+               
                 if (next_next_edge == undefined) {
                     // console.log("no right neighbor found for edge", next_edge.id)
                     if (edges_without_left_neighbors.filter(f => !f.visited).length > 0) next_next_edge = edges_without_left_neighbors.filter(f => !f.visited)[0]
@@ -1167,7 +1266,7 @@ class Biofabric_lp{
             this.g.links.sort((a, b) => {
                 let aid = a.id;
                 let bid = b.id;
-                
+               
                 if (this.result["x_e" + aid + "e" + bid] == 0) return 1;
                 else if (this.result["x_e" + aid + "e" + bid] == 1) return -1;
                 else if (this.result["x_e" + bid + "e" + aid] == 1) return 1;
@@ -1177,7 +1276,7 @@ class Biofabric_lp{
             this.g.nodes.sort((a, b) => {
                 let aid = a.id;
                 let bid = b.id;
-                
+               
                 if (this.result["y_n" + aid + "n" + bid] == 0) return 1;
                 else if (this.result["y_n" + aid + "n" + bid] == 1) return -1;
                 else if (this.result["y_n" + bid + "n" + aid] == 1) return 1;
@@ -1186,14 +1285,50 @@ class Biofabric_lp{
         }
     }
 
-    writeForGLPK(){
-        let tmpstring = ""
-        for (let elem of this.model.bounds.split("\n")){
-            tmpstring += elem.replace("binary ", " ").replace("Bounds", "Binaries\n")
+writeForGLPK(){
+    // Build the LP content in proper CPLEX LP format
+    let lpContent = "";
+   
+    // Objective function section
+    lpContent += this.model.objective_function;
+   
+    // Subject To section
+    lpContent += this.model.subjectTo;
+   
+    // Bounds section - handle both regular bounds and binary variables
+    lpContent += "\nBounds\n";
+   
+    // Process bounds section to separate regular bounds from binary declarations
+    let boundsLines = this.model.bounds.split("\n");
+    let binaryVars = [];
+   
+    for (let line of boundsLines) {
+        let trimmed = line.trim();
+       
+        if (trimmed.startsWith("binary")) {
+            // Extract binary variable name
+            let varName = trimmed.replace("binary", "").trim();
+            if (varName) {
+                binaryVars.push(varName);
+            }
+        } else if (trimmed && !trimmed.includes("Bounds") && trimmed !== "") {
+            // Regular bound line
+            lpContent += trimmed + "\n";
         }
-        return this.model.objective_function.slice(0, this.model.objective_function.length - 1) + this.model.subjectTo + tmpstring + '\nEnd\n'
     }
-
+   
+    // Add binary variables section if there are any
+    if (binaryVars.length > 0) {
+        lpContent += "\nBinaries\n";
+        lpContent += binaryVars.join(" ") + "\n";
+    }
+   
+    // End section
+    lpContent += "\nEnd\n";
+   
+    return lpContent;
+}
+   
     async readFromGLPK(filename){
         await fetch(filename)
             .then(response => response.text())
@@ -1233,7 +1368,7 @@ class Biofabric_lp{
                 const evt = new Event('solution_reading_complete');
                 document.dispatchEvent(evt)
             })
-    
+   
     }
 }
 
