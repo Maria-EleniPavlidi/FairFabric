@@ -1,11 +1,10 @@
-function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edgetitle, print_title = true, stroke_width = 3, rect_size = 5, use_node_colors = false){
+function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edgetitle, print_title = true, stroke_width = 3, rect_size = 5, use_node_colors = false, show_edge_indices = false){
   
     let svgwidth = 500;
     let svgheight = 500;
     let padding = {left: 30, right: 20, top: (print_title? 40 : 20), bottom: 50}
     let color_by_staircase = true;
     let show_node_indices = true;
-    let show_edge_indices = false;
     
     const svg = d3.create('svg')
         .attr("viewBox", [0, 0, svgwidth, svgheight])
@@ -23,31 +22,55 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
       .text(nodetitle + " + " + edgetitle)
   
     let node_h_dict = {}
+    let node_color_dict = {}
+    const node_by_id = new Map(graph.nodes.map((n) => [String(n.id), n]));
+
+    function edgeColorFromNodeColor(color) {
+      const c = String(color || "").toLowerCase();
+      if (c === "red") return "#BE4F62";
+      if (c === "blue") return "#5D8AA8";
+      if (c === "green") return "#1ac420";
+      return "#8a8a8a";
+    }
+
+    function getForegroundColorsForEdge(edge) {
+      const srcKey = String(edge.source);
+      const dstKey = String(edge.target);
+      const c1 = edgeColorFromNodeColor(node_color_dict[srcKey]);
+      const c2 = edgeColorFromNodeColor(node_color_dict[dstKey]);
+      return { c1, c2 };
+    }
   
     for (let i in ordernodes){
       let line_h = padding.top + (svgheight - padding.top - padding.bottom)/numnodes * i
   
+      const nodeKey = String(ordernodes[i]);
       node_h_dict[ordernodes[i]] = line_h;
+      let currentNode = node_by_id.get(nodeKey);
+      node_color_dict[nodeKey] = (currentNode?.color || "unknown");
       
       // Determine node line color 
-      let nodeColor = "rgba(238, 238, 238, 0.5)"; // default light gray 
-      
-      if (use_node_colors) { // ONLY apply node colors when use_node_colors is true
-        let currentNode = graph.nodes.find(n => n.id === ordernodes[i]);
+      let nodeColor = "rgb(238, 238, 238)";
+      let nodeOpacity = 0.15; // 0.5 * 0.3
+
+      if (use_node_colors) {
         if (currentNode && currentNode.color) {
           if (currentNode.color === 'blue') {
-            nodeColor = 'rgba(0, 0, 255, 0.5)'; 
+            nodeColor = 'rgb(0, 0, 255)';
+            nodeOpacity = 0.15;
           } else if (currentNode.color === 'red') {
-            nodeColor = 'rgba(255, 0, 0, 0.5)'; 
-          }
-          else if (currentNode.color === 'green') {
-            nodeColor = 'rgba(26, 196, 32, 0.5)'; 
+            nodeColor = 'rgb(255, 0, 0)';
+            nodeOpacity = 0.15;
+          } else if (currentNode.color === 'green') {
+            nodeColor = 'rgb(26, 196, 32)';
+            nodeOpacity = 0.15;
           }
         }
       }
       
       svg.append("line")
         .attr("stroke", nodeColor)
+        .attr("stroke-opacity", nodeOpacity)
         .attr("stroke-width", 3)
         .style("stroke-linecap", "round")
         .attr("x1", padding.left)
@@ -59,7 +82,7 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
         .attr("x", padding.left - 10)
         .attr("y", line_h + .2 * (svgheight - padding.top - padding.bottom)/(numnodes))
         .style("font-size", "small")
-        .style("fill", "lightgray")
+        .style("fill", "white")
         .style("font-family", "Arial")
         .style("text-anchor", "end")
         .text(ordernodes[i])
@@ -89,20 +112,11 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
         index_of_possible_stair = result.stairs.findIndex(s => s.includes(orderedges[i]));
       }
 
-      let staircase_color_1 = "#F9D466";
-      let staircase_color_2 = "#f7a222";
-
       if (how_many_stairs_share_this_edge) {
         svg.append("line")
-          .attr("stroke", () => {
-            if (!color_by_staircase) return "gray";
-            else {
-              if (possible_stair != undefined) {
-                return index_of_possible_stair % 2 == 0 ? staircase_color_2 : staircase_color_1;
-              } else return "gray";
-            }
-          })
+          .attr("stroke", "white")
           .attr("stroke-width", stroke_width)
+          .attr("stroke-opacity", 1)
           .style("stroke-linecap", "round")
           .attr("x1", line_x)
           .attr("x2", line_x)
@@ -112,16 +126,9 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
 
       
       svg.append("line")
-        .attr("stroke", () => {
-          if (!color_by_staircase) return "gray"
-          else {
-            if (possible_stair != undefined) {
-              if (index_of_possible_stair%2 == 0) return staircase_color_1
-              else return staircase_color_2
-            } else return "gray"
-          }
-        })
+        .attr("stroke", "white")
         .attr("stroke-width", stroke_width)
+          .attr("stroke-opacity", how_many_stairs_share_this_edge ? 1 : 0.5)
           .style("stroke-linecap", "round")
           .attr("x1", line_x)
           .attr("x2", line_x)
@@ -137,13 +144,45 @@ function render_biofabric(graph, ordernodes, orderedges, result, nodetitle, edge
           console.log(edge.id)
         })
 
+      const fg = getForegroundColorsForEdge(edge);
+      const fgWidth = Math.max(1.8, stroke_width * 0.55);
+      const fgOpacity = how_many_stairs_share_this_edge ? 1 : 0.5;
+      if (fg.c1 === fg.c2) {
+        svg.append("line")
+          .attr("stroke", fg.c1)
+          .attr("stroke-width", fgWidth)
+          .attr("stroke-opacity", fgOpacity)
+          .style("stroke-linecap", "round")
+          .attr("x1", line_x)
+          .attr("x2", line_x)
+          .attr("y1", topnode_h)
+          .attr("y2", bottomnode_h);
+      } else {
+        const steps = 12;
+        const gradientGroup = svg.append("g")
+          .attr("opacity", fgOpacity);
+        for (let s = 0; s < steps; s++) {
+          const t0 = s / steps;
+          const t1 = (s + 1) / steps;
+          gradientGroup.append("line")
+            .attr("stroke", d3.interpolateRgb(fg.c1, fg.c2)((t0 + t1) / 2))
+            .attr("stroke-width", fgWidth)
+            .attr("stroke-opacity", 1)
+            .style("stroke-linecap", "round")
+            .attr("x1", line_x)
+            .attr("x2", line_x)
+            .attr("y1", topnode_h + (bottomnode_h - topnode_h) * t0)
+            .attr("y2", topnode_h + (bottomnode_h - topnode_h) * t1);
+        }
+      }
+
       if (show_edge_indices) svg.append("text")
         .attr("x", line_x - rect_size/2)
-        .attr("y", padding.top - 8 + i%2 * 6)
-        .style("font-size", "0.3em")
+        .attr("y", padding.top - 8)
+        .style("font-size", "small")
         .style("font-family", "Arial")
         .style("text-anchor", "start")
-        .style("fill", "lightgray")
+        .style("fill", "white")
         .text(orderedges[i])
     }
     
