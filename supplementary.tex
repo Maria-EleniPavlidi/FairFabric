@@ -1,0 +1,403 @@
+%\documentclass{article}
+\documentclass[onecolumn]{egpubl}
+\usepackage{eurovis2027}
+\usepackage{amsmath,amssymb}
+\SpecialIssuePaper 
+\CGFStandardLicense
+\usepackage[T1]{fontenc}
+\usepackage{dfadobe}  
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{cite}  % comment out for biblatex with backend=biber
+% ---------------------------
+%\biberVersion
+\BibtexOrBiblatex
+%\usepackage[backend=biber,bibstyle=EG,citestyle=alphabetic,backref=true]{biblatex} 
+%\addbibresource{egbibsample.bib}
+% ---------------------------  
+\electronicVersion
+\PrintedOrElectronic
+% for including postscript figures
+% mind: package option 'draft' will replace PS figure by a filename within a frame
+\ifpdf \usepackage[pdftex]{graphicx} \pdfcompresslevel=9
+\else \usepackage[dvips]{graphicx} \fi
+
+\usepackage{egweblnk}
+\usepackage[most]{tcolorbox}
+
+\usepackage[dvipsnames]{xcolor}
+\newcommand{\revision}[1]{\textcolor{black}{#1}\xspace}
+
+\usepackage{apptools}
+\usepackage{xspace}
+\usepackage{svg}
+\newcommand{\restateref}[1]{\IfAppendix{\hyperref[#1]{$\star$}}{\hyperref[#1*]{$\star$}}}
+\newcommand{\dataset}[1]{\textsf{#1}\xspace}
+\newcommand{\Exact}{\textsf{Opt}\xspace}
+\newcommand{\Heuristic}{\textsf{Heur}\xspace}
+
+\newcommand{\cb}[1]{\todo[color=green!30]{CB: #1}}
+\newcommand{\ab}[1]{\todo[color=orange!30]{AB: #1}}
+\newcommand{\walter}[1]{\todo[color=teal!30]{WD: #1}}
+\newcommand{\hf}[2][ ]{\todo[inline,#1,color=red!30]{HF: #2}}
+\newcommand{\sh}[1]{\todo[color=gray!30]{SH: #1}}
+\newcommand{\mep}[1]{\todo[color=blue!30]{MEP: #1}}
+\newcommand{\at}[1]{\todo[inline,color=pink!30]{AT: #1}}
+
+\usepackage[capitalise]{cleveref}
+
+%\Crefname{theorem}{Thm.}{Thms.}
+\Crefname{figure}{Figure}{Figures}
+%\Crefname{section}{Sect.}{Sects.}
+% \Crefname{figure}{Fig.}{Figs.}
+
+\usepackage{comment}
+
+\graphicspath{{./figures/}}%helpful if your graphic files are in another directory
+
+\usepackage{paralist}
+
+\usepackage{array}
+\usepackage{subcaption}
+\usepackage{wrapfig}
+%\usepackage{todonotes}
+\usepackage[colorinlistoftodos]{todonotes}
+
+\usepackage{subcaption}
+
+%\setulcolor{blue}\ul{Blue} 
+%\setulcolor{red}\ul{Red}
+
+\definecolor{SoftBlue}{HTML}{5D8AA8} 
+\definecolor{SoftRed}{HTML}{BE4F62} 
+\definecolor{SoftGreen}{HTML}{5FAF6A}
+
+\definecolor{defblue}{rgb}{0.121,0.47,0.705}
+\DeclareTextFontCommand{\emph}{\color{defblue}\em}
+
+\newcommand{\roundul}[2]{%
+  \leavevmode
+  \begin{tikzpicture}[baseline=(todraw.base)]
+    \node[inner sep=0pt, outer sep=0pt] (todraw) {#2};
+    \useasboundingbox (todraw.south west) rectangle (todraw.north east);
+    \draw[
+      #1,
+      line width=1.8pt,
+      line cap=round
+    ] ([yshift=-1pt]todraw.south west) -- ([yshift=-1pt]todraw.south east);
+  \end{tikzpicture}% 
+}
+
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{svg}
+\usepackage{graphicx}
+
+% --- PLOT COLORS ---
+\colorlet{plotRed}{SoftRed}      % Group Red
+\colorlet{plotBlue}{SoftBlue}    % Group Blue
+\definecolor{plotPurple}{RGB}{139,0,139} % Total Quality
+\definecolor{plotCyan}{RGB}{0,139,139}   % Runtime Baseline
+\definecolor{plotOrange}{RGB}{255,140,0} % Runtime Fairness
+
+% --- LINE COMMAND ---
+\newcommand{\legendline}[1]{%
+  \tikz[baseline=-0.5ex]\draw[#1,line width=1.5pt, line cap=round] (0,0) -- (0.4,0);%
+}
+
+\newcommand{\FairFabric}{\textsf{FairFabric}\xspace}
+
+%% Paper title.
+\title{FairFabric: Fairness in BioFabric Network Visualization – Supplemental Material}
+
+
+\ccsdesc[500]{Mathematics of computing~Graph algorithms}
+\ccsdesc[500]{Mathematics of computing~Graph theory}
+\ccsdesc[500]{Theory of computation~Graph algorithms analysis}
+
+
+%%%%%%%%%%%%%%%%%
+
+%\supplement{}%optional, e.g. related research data, source code, ... hosted on a repository like zenodo, figshare, GitHub, ...
+%\supplementdetails[linktext={opt. text shown instead of the URL}, cite=DBLP:books/mk/GrayR93, subcategory={Description, Subcategory}, swhid={Software Heritage Identifier}]{General Classification (e.g. Software, Dataset, Model, ...)}{URL to related version} %linktext, cite, and subcategory are optional
+
+%\funding{}%optional, to capture a funding statement, which applies to all authors. Please enter author specific funding statements as fifth argument of the \author macro.
+
+%\acknowledgements{I want to thank \dots}%optional
+%\acknowledgements{}
+
+%\nolinenumbers %uncomment to disable line numbering
+
+%%%%%%%%%%%%%%%%%%% Additional Packages %%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[utf8]{inputenc}
+\usepackage{xspace}
+\usepackage{todonotes}
+\usepackage{thmtools} 
+%\usepackage{thm-restate}
+\usepackage{apptools}
+\usepackage{complexity}
+\usepackage[inline]{enumitem}
+\usepackage{wrapfig}
+\newtheorem{property}{Property}
+\crefname{property}{Property}{Properties}
+%\captionsetup[subfigure]{justification=centering}
+
+\usepackage{graphicx} % Required for inserting images
+
+%Editor-only macros:: begin (do not touch as author)%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \EventEditors{John Q. Open and Joan R. Access}
+% \EventNoEds{2}
+% \EventLongTitle{42nd Conference on Very Important Topics (CVIT 2016)}
+% \EventShortTitle{CVIT 2016}
+% \EventAcronym{CVIT}
+% \EventYear{2016}
+% \EventDate{December 24--27, 2016}
+% \EventLocation{Little Whinging, United Kingdom}
+% \EventLogo{}
+% \SeriesVolume{42}
+% \ArticleNo{23}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\author[Pavlidi, Montecchiani, N\"ollenburg, Di Bartolomeo]
+{\parbox{\textwidth}{\centering Maria Eleni Pavlidi$^{1}$\orcid{0009-0009-4500-0112}, Fabrizio Montecchiani$^{2}$\orcid{0000-0002-0543-8912}, Martin N\"ollenburg$^{3}$\orcid{0000-0003-0454-3937},
+  and Sara Di Bartolomeo$^{3}$\orcid{0000-0001-9517-3526}
+  }
+  \\
+% For Computer Graphics Forum: Please use the abbreviation of your first name.
+{\parbox{\textwidth}{\centering
+  $^1$University of Ioannina, Greece, \texttt{m.e.pavlidi@uoi.gr}\\
+  $^2$University of Perugia, Italy, \texttt{fabrizio.montecchiani@unipg.it}\\
+  $^3$TU Wien, Vienna, Austria, \texttt{noellenburg@ac.tuwien.ac.at, sdb@ac.tuwien.ac.at}\smallskip
+  }
+}
+}
+
+\begin{document}
+
+\maketitle
+\noindent This is the supplemental material for the paper ``\FairFabric: Fairness in BioFabric Network Visualization''. In this document, we provide the following additional material:
+
+\begin{itemize}
+    \item \cref{sec:appendix_smoothness}: We examine how the edge-length penalty preserves the local compactness of staircase motifs as cohesive visual blocks while balancing global graph constraints.
+    \item \cref{sec:breaking}: We illustrate how achieving fair representations can require breaking majority-group staircases in order to form additional staircases for the minority group.
+    \item \cref{sec:netflix}: We present an additional real-world case study on the character network of the Netflix series \emph{Dark}, demonstrating how fairness constraints capture narrative symmetry.
+    \item \cref{sec:alternative_fairness}: We discuss alternative fairness formulations in network visualization—including inter-group connectivity fairness and equal space fairness—and their visual trade-offs in BioFabric layouts.
+    \item \cref{sec:prioritize_min}: We introduce a max-min fairness formulation (\emph{Prioritize Minimum}) that maximizes the baseline staircase representation of the worst-off group before optimizing overall layout quality.
+    \item \cref{sec:edge}: We extend our staircase formulation from node-colored to edge-colored graphs, defining motif classification and staircase imbalance directly over colored edges.
+    \item \cref{sec:compare}: We provide a comparative evaluation of the three fairness models.
+\end{itemize}
+
+\section{Smoothness}
+\label{sec:appendix_smoothness}
+
+Our results show that incorporating the edge-length penalty effectively constrains the endpoints of each staircase to remain consecutive and tightly clustered. As a result, the staircase emerges as a distinct, coherent “block”.
+
+However, we observe that although these endpoints are close to one another, they are not always positioned near their associated central node. This is largely due to the fact that many nodes participate in multiple staircases or additional graph connections. Enforcing proximity between endpoints and the central node would require the solver to distort other edges or, in some cases, break neighboring staircase structures. Consequently, the layout prioritizes local compactness—preserving each staircase as a cohesive unit—while allowing some horizontal expansion to satisfy the broader constraints of the graph. 
+
+\section{Breaking staircases}
+\label{sec:breaking}
+
+Achieving a fair layout sometimes requires breaking existing staircases in the majority group in order to form additional staircases for the minority group. As illustrated in Figure~\ref{fig:keyFind}, the structurally optimal layout produces 5 red (majority) staircases and only 1 blue (minority) staircase. In contrast, the fairness-aware model sacrifices 2 red staircases—reducing them from 5 to 3—to enable the formation of a second blue staircase, resulting in a more balanced representation.
+
+\begin{figure*}[htbp]
+    \centering
+    \sffamily
+    \fontsize{8}{9}\selectfont
+    \vspace{0.5em}
+
+    % --- Figure 1: Original graph ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/keyFind_de.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{Red 5, Blue: 0 , Mixed: 0.}}
+        \label{fig:keyFindde}
+    \end{subfigure}
+    \hfill
+    % --- Figure 2: Optimal ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/keyFind_opt.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{0 mix, 5 red, and 1 blue staircases.}}
+        \label{fig:keyFindopt}
+    \end{subfigure}
+    \hfill
+    % --- Figure 3: Fairness-Aware ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/keyFind_fair.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{0 mix, 3 red, and 2 blue staircases.}}
+        \label{fig:keyFindfair}
+    \end{subfigure}
+
+    \vspace{0.5em}
+    \normalsize
+    \caption{(a) Degreecending, (b) \FairFabric layout, $\lambda_2 = 0$, and (c) \FairFabric layout, $\lambda_2 = 0.5$.}
+    \label{fig:keyFind}
+\end{figure*}
+
+
+\smallskip\section{Case Study: Netflix Series Dark}
+\label{sec:netflix}
+To manage the high density of the graph, we extracted a primary subgraph by selecting the nodes with the highest degree, focusing the analysis on the most structurally significant characters~\cite{gdcontest25}. The second study analyzes the character network of the series Dark, which centers on two symmetric timelines: \roundul{SoftBlue}{World of Adam (A)} and \roundul{SoftRed}{World of Eve (E)}. We extracted subgraphs of increasing size to observe how fairness influences the representation of these parallel communities in dense settings.
+
+\begin{figure}[htp]
+    \centering
+    \sffamily
+    \fontsize{8}{8}\selectfont
+    % TOP PART
+    \begin{minipage}{0.4\linewidth}
+        \includesvg[inkscapelatex=false, width=0.9\linewidth]{figs/dark30opt.svg}
+    \end{minipage}%
+    \hfill
+    \begin{minipage}{0.4\linewidth}
+        \includesvg[inkscapelatex=false, width=0.9\linewidth]{figs/dark30fair.svg}
+    \end{minipage}
+    \caption{$n=60$ subgraph: The standard optimization (left) results in an asymmetrical 6-4-1 staircase distribution, favoring the World of Adam. In contrast, the fairness-aware model (right) achieves a perfectly balanced 4-4-1 distribution. This symmetry not only aligns with the show's narrative structure but also demonstrates how the fairness constraint effectively prunes the search space to find equitable, stable configurations.}
+    \label{fig:dark}
+\end{figure}
+
+In the $n=60$ subgraph, the model without fairness constraints produces a layout with 11 staircases, \roundul{SoftBlue}{6 for A}, \roundul{SoftRed}{4 for E} and 1 mixed. By applying the fairness-aware objective, the layout shifts to a perfectly symmetric distribution, \roundul{SoftBlue}{4 for A}, \roundul{SoftRed}{4 for E} and 1 mixed. While this reduces the total motif count, it provides a more faithful visual representation of the show's dual-world symmetry, ensuring neither group structurally dominates the other.
+
+The most significant impact of fairness appears in the $n=80$ subgraph. While the optimal maximization problem failed to converge after 58 hours, the fairness-aware model reached an optimal solution within the standard time limit. This demonstrates that the fairness penalty acts as a pruning mechanism; by steering the solver away from asymmetrical permutations, it makes the computation of dense, complex networks significantly more efficient.
+
+ \section{Other Fair models}
+\label{sec:alternative_fairness}
+
+In network visualization, defining fairness is non-trivial, as visual equity can be formulated through several distinct topological and visual criteria. In \FairFabric, we address fairness by penalizing imbalance across both \emph{endpoint participation} and total \emph{staircase counts}, encouraging both metrics to remain as equal as possible relative to each group's structural presence. However, other valid fairness formulations exist, each carrying distinct visual and analytical trade-offs:
+
+\begin{itemize}    
+    \item \textbf{Inter-Group Connectivity Fairness~\cite{piselli2026f2}:} Instead of balancing internal group structures, fairness can be defined to explicitly highlight cross-faction connections. In this mode, mixed staircases (bridging motifs) receive higher optimization weights to foreground nodes that integrate different communities.
+
+    \item \textbf{Equal Space Fairness~\cite{EadesHLMNPW25}:} Instead of counting patterns, fairness can be measured by physical screen space—such as giving each group equal vertical canvas height or equal line lengths. However, in \FairFabric, giving equal screen space to a smaller group forces its lines to stretch across a larger vertical area. This directly conflicts with our goal of keeping lines short and clean (\emph{smoothness}).
+\end{itemize}
+
+
+\section{Prioritize Minimum}
+\label{sec:prioritize_min}
+
+Following the principle of \emph{max-min fairness}~\cite{DBLP:conf/icml/HashimotoSNL18}, we extend the two-group \FairFabric formulation to maximize the structural representation of the worst-off group ($\max \min_{g} s_g$). This ensures that the underrepresented group receives the highest possible baseline of staircases, regardless of the majority group's size or density. To achieve this, we run the solver in two stages:
+\begin{itemize}
+    \item Let \roundul{SoftRed}{$s_R$} and \roundul{SoftBlue}{$s_B$} denote the total number of \roundul{SoftRed}{Red} and \roundul{SoftBlue}{Blue} staircases, respectively. First, we independently maximize the staircases for the \roundul{SoftRed}{Red group}; \cref{fig:karate_red} and the \roundul{SoftBlue}{Blue group}; \cref{fig:karate_blue} to see how many staircases each group can achieve on its own. Next, we introduce an integer variable $z \in \mathbb{Z}$ with the following two constraints: $z \le$ \roundul{SoftRed}{$s_R$} and $z \le$ \roundul{SoftBlue}{$s_B$}. By maximizing $z$, the solver finds the highest possible minimum count $z^* = \min(\text{\roundul{SoftRed}{$s_R$}}, \text{\roundul{SoftBlue}{$s_B$}})$. 
+    \item Next, we require both groups to have at least $z^*$ staircases (\roundul{SoftRed}{$s_R$} $\ge z^*$ and \roundul{SoftBlue}{$s_B$} $\ge z^*$) and maximize the total number of staircases in the layout. This allows the larger group to form as many staircases as possible while maintaining the staircases of the minority group; \cref{fig:karate_minority_final}. If building more staircases for the smaller group requires breaking some staircases in the larger group, the solver does so; otherwise, existing staircases are left untouched. 
+\end{itemize}
+
+\medskip \noindent \textbf{Discussion.}
+
+\begin{figure*}[htbp]
+    \centering
+    \sffamily
+    \fontsize{8}{9}\selectfont
+    \vspace{0.5em}
+
+    % --- Figure 1: Original graph ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/karate_red.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{Maximize red: 29 red, 3 blue, 1 mixed.}}
+        \label{fig:karate_red}
+    \end{subfigure}
+    \hfill
+    % --- Figure 2: Optimal ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/karate_blue.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{Maximize blue: 9 red, 19 blue, 0 mixed.}}
+        \label{fig:karate_blue}
+    \end{subfigure}
+    \hfill
+    % --- Figure 3: Fairness-Aware ---
+    \begin{subfigure}[b]{0.31\linewidth}
+        \centering
+        \includesvg[inkscapelatex=false, width=0.95\linewidth]{figs/karate_final.svg}
+        \vspace{0.3em}
+        \caption{\textcolor{gray}{Fairness-aware model: Timeout.}}
+        \label{fig:karate_minority_final}
+    \end{subfigure}
+
+    \vspace{0.5em}
+    \normalsize
+    \caption{Karate club data set: (a) maximize red, (b) maximize blue, and (c) keep the minority.}
+    \label{fig:karate_minority}
+\end{figure*}
+
+
+\smallskip \section{Edge-colored graphs}
+\label{sec:edge}
+
+We extend our staircase formulation to edge-colored graphs, where staircase groups are determined by edge colors rather than node colors.
+
+\smallskip \noindent\textbf{Color assignment.}
+Each counted triplet $W$ is assigned to the color shared by at least two of its three edges. Thus, a triplet with two or three \roundul{SoftBlue}{Blue} edges contributes to \roundul{SoftBlue}{$s_B$}, while a triplet with two or three \roundul{SoftRed}{Red} edges contributes to \roundul{SoftRed}{$s_R$}.
+
+\smallskip
+\noindent\textbf{Fairness imbalance.}
+We encourage a balanced representation of the two groups by penalizing the absolute difference between their staircase counts. We introduce a non-negative variable $\Delta_s$ satisfying
+
+\[\Delta_s \ge s_B - s_R,
+\qquad
+\Delta_s \ge s_R - s_B.\]
+
+Penalizing $\Delta_s$ favors layouts with similar numbers of \roundul{SoftBlue}{Blue} and \roundul{SoftRed}{Red} staircases.
+
+\smallskip
+\noindent\textbf{Objective function.}
+The objective balances the total number of triplets, $T = \sum_W c_W$, against the imbalance between the two groups:
+
+\begin{equation*}
+\text{Maximize}
+\quad
+\lambda_1 T - \lambda_s \Delta_s.
+\end{equation*}
+
+Here, $\lambda_1$ rewards triplets, while $\lambda_s$ controls how strongly imbalance is penalized.
+The solver proceeds in three stages:
+\begin{enumerate}
+    \item \textbf{Optimum.}
+    Maximize $T$ without a fairness penalty to obtain the baseline optimum $T^*$.
+
+    \item \textbf{Fairness Trade-Off.}
+    When $\lambda_s > 0$, maximize $\lambda_1 T - \lambda_s \Delta_s$. This allows a reduction in the number of triplets when the improvement in balance outweighs that loss.
+    When $\lambda_s = 0$, instead maximize the total number of counted staircases $S$, subject to $T \ge T^*$.
+
+    \item \textbf{Edge-Length minimization.}
+    Fix the objective value obtained in Stage~2 and minimize the total vertical edge length:
+    \[
+    \sum_{e \in E} L_e,
+    \qquad
+    L_e = \left|\mathrm{pos}(u) - \mathrm{pos}(v)\right|
+    \quad \text{for } e = \{u,v\}.
+    \]
+    Edge length therefore serves only as a tie-breaker among layouts with the same Stage~2 objective value.
+\end{enumerate}
+
+\medskip \noindent \textbf{Discussion.}
+\begin{figure}[htp]
+    \centering
+    \sffamily
+    \fontsize{8}{8}\selectfont
+    % TOP PART
+    \begin{minipage}{0.4\linewidth}
+        \includesvg[inkscapelatex=false, width=0.9\linewidth]{figs/sampson_opt.svg}
+         \caption{\textcolor{gray}{Red: 15, Blue: 18, Mixed: 0.}}
+    \end{minipage}%
+    \hfill
+    \begin{minipage}{0.4\linewidth}
+        \includesvg[inkscapelatex=false, width=0.9\linewidth]{figs/sampson_fair.svg}
+    \end{minipage}
+     \caption{\textcolor{gray}{Red: 17, Blue: 17, Mixed: 0.}}
+    \label{fig:sampson}
+\end{figure}
+
+\smallskip\section{Comparison of the three fair models}
+\label{sec:compare}
+
+
+\bibliographystyle{eg-alpha-doi}
+\bibliography{references}
+
+\end{document}
